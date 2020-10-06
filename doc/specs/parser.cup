@@ -1,0 +1,1584 @@
+package compiler.syntax;
+
+// Declaración de importaciones 
+//(No modificar las proporcionadas. Se pueden agregar mas)
+
+import java_cup.runtime.Symbol;
+import java.util.*;
+
+import es.uned.lsi.compiler.lexical.*;
+import es.uned.lsi.compiler.code.*;
+import es.uned.lsi.compiler.intermediate.*;
+import es.uned.lsi.compiler.semantic.*;
+import es.uned.lsi.compiler.semantic.symbol.*;
+import es.uned.lsi.compiler.semantic.type.*;
+import es.uned.lsi.compiler.syntax.*;
+
+import compiler.CompilerContext;
+import compiler.lexical.*;
+import compiler.syntax.nonTerminal.*;
+import compiler.semantic.*;
+import compiler.semantic.symbol.*;
+import compiler.semantic.type.*;
+import compiler.intermediate.*;
+import compiler.code.*;
+
+
+
+// Declaración del código de usuario
+
+action code   {:
+	
+	SyntaxErrorManager   syntaxErrorManager   = CompilerContext.getSyntaxErrorManager();
+	SemanticErrorManager semanticErrorManager = CompilerContext.getSemanticErrorManager ();
+	ScopeManagerIF       scopeManager         = CompilerContext.getScopeManager ();
+	FinalCodeFactoryIF   finalCodeFactory     = CompilerContext.getFinalCodeFactory ();
+
+	//Lista que almacena las quadruplas de las cadenas 
+	List<QuadrupleIF> listaCadenas = new ArrayList<QuadrupleIF>();
+
+	//Entero auxiliar para controlar que los if - else lleven nombres de scope diferentes
+	int controlScope = 0;
+
+	/*
+	 * Devuelve el tipo de la expresion
+	 */
+	public TypeIF getTypeExpresion(Expresion expresion) {
+		//Si se compone de una expresión aritmética será un entero
+		if (expresion.getExprArit() != null) {
+			return scopeManager.searchType("INTEGER");
+		}
+		
+		//Si se compone de una expresión lógica será un booleano
+		if (expresion.getExprLogica() != null) {
+			return scopeManager.searchType("BOOLEAN");
+		}
+		
+		//Si se compone de variables, comprobaremos su tipo
+		if (expresion.getVariables() != null) {
+			if(scopeManager.searchSymbol(expresion.getVariables().getIdentificador()).getType() instanceof TypeArray) {
+				TypeArray typeArray = (TypeArray)scopeManager.searchSymbol(expresion.getVariables().getIdentificador()).getType();
+				return typeArray.getType();
+			} else if(scopeManager.searchSymbol(expresion.getVariables().getIdentificador()).getType() instanceof TypeFunction) {
+				SymbolFunction symbolFunction = (SymbolFunction)scopeManager.searchSymbol(expresion.getVariables().getIdentificador());
+				TypeIF typeFunction = symbolFunction.getCabProcedure().getTipoRetorno().getIntOBool();
+				return typeFunction;
+			} else {
+				return scopeManager.searchSymbol(expresion.getVariables().getIdentificador()).getType();
+			}
+		}
+		return null;
+	}
+:}	
+
+parser code {:
+	SyntaxErrorManager syntaxErrorManager = CompilerContext.getSyntaxErrorManager();
+	
+	public void syntax_error(Symbol symbol)
+	{ 
+	    Token token = (Token) symbol.value;
+	    syntaxErrorManager.syntaxError ("Error sintactico", token);	    
+	}
+		
+	public void unrecovered_syntax_error(java_cup.runtime.Symbol symbol)
+	{	
+	    Token token = (Token) symbol.value;
+	    syntaxErrorManager.syntaxFatalError ("Error fatal", token);
+	}
+:}
+
+
+//
+// Declaración de terminales
+
+//
+terminal Token IDENTIFICADOR;
+terminal Token INTEGER, BOOLEAN, STRING;
+terminal Token ARRAY, OF;
+terminal Token MODULE, BEGIN, END, PROCEDURE, RETURN;
+terminal Token OR, NOT;
+terminal Token CONST, TYPE, VAR;
+terminal Token IF, ELSE, THEN, DO, FOR, TO;
+terminal Token WRITESTRING, WRITEINT, WRITELN;
+
+terminal Token PARENIZQ, PARENDER, CORCHIZQ, CORCHDER;
+terminal Token PUNTOPUNTO, COMA, PUNTOYCOMA, DOSPUNTOS, IGUAL;
+terminal Token MINUS, PRODUCTO, MAYOR;
+terminal Token DOSPUNTOSIGUAL;
+
+terminal Token ENTERO;
+terminal Token TRUE, FALSE;
+
+
+//
+// Declaración de no terminales
+//
+non terminal                      	program;
+non terminal Axiom					axiom;
+
+non terminal CabModule            	cabModule;
+non terminal Cuerpo               	cuerpo;
+
+non terminal StmConstantes        	stmConstantes;
+non terminal StmTipos             	stmTipos;
+non terminal StmVar             	stmVar;
+non terminal StmSubprogram       	stmSubprogram;
+
+non terminal SentConst          	sentConst;
+non terminal ExpConst           	expConst;
+non terminal Object		         	valorConst;
+
+non terminal SentTipo            	sentTipo;
+non terminal TypeArray             	expTipo;
+
+non terminal SentVar              	sentVar;
+non terminal ExpVar              	expVar;
+non terminal CadIdVar            	cadIdVar;
+non terminal TypeIF              	tipoVar;
+
+non terminal CabProcedure         	cabProcedure;
+non terminal TipoRetorno          	tipoRetorno;
+non terminal ProcParenParam      	procParenParam;
+non terminal ProcListParam      	procListParam;
+non terminal ProcParam          	procParam;
+
+non terminal Sentencias          	sentencias;
+non terminal ListSentencia       	listSentencia;
+non terminal Sentencia           	sentencia;
+
+non terminal Expresion            	expresion;
+non terminal ExprArit            	exprArit;
+non terminal ExprLogica          	exprLogica;
+non terminal Variables           	variables;
+
+non terminal SentProcedure       	sentProcedure;
+non terminal ParFuncion           	parFuncion;
+non terminal Parametros         	parametros;
+
+non terminal SentAsign          	sentAsign;
+non terminal SentReturn          	sentReturn;
+non terminal SentIf             	sentIf;
+non terminal SentElse           	sentElse;
+non terminal SentFor            	sentFor;
+
+non terminal SWriteString         	sWriteString;
+non terminal SWriteInt           	sWriteInt;
+non terminal SWriteLn             	sWriteLn;
+
+non terminal IdArray             	idArray;
+non terminal TypeSimple            	intOBool;
+non terminal Integer               	entOid;
+non terminal Boolean           		vBooleano;
+
+
+
+// Declaración de relaciones de precedencia
+precedence nonassoc MAYOR, IGUAL;
+precedence left     MINUS, OR;
+precedence left     PRODUCTO;
+precedence right    NOT;
+
+precedence left     PARENIZQ, PARENDER, CORCHIZQ, CORCHDER;
+
+
+
+//
+// Declaración de reglas de producción
+
+
+start with program;
+
+program ::= 
+  {: syntaxErrorManager.syntaxInfo ("Starting parsing..."); 
+	
+	
+  :}
+  axiom:ax
+  {: 
+		//Asignación de posiciones, inicialización de variables y generación de todo el CI del programa
+		List<ScopeIF> scopes = scopeManager.getAllScopes();
+		//Recorremos los scopes
+		for (ScopeIF scope: scopes) {
+			IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scope);		
+			int direccionEstatica = 65535;
+			//Asignación de posiciones a las variables e inicialización de las mismas
+			List<SymbolIF> symbols = scope.getSymbolTable().getSymbols();
+			//Recorremos los símbolos
+			for (SymbolIF symbol : symbols) {
+				if (symbol instanceof SymbolVariable) {
+					//Si es una variables, se le asigna una dirección y se le resta a la dirección actual el tamaño del símbolo
+					((SymbolVariable)symbol).setAddress(direccionEstatica);
+					direccionEstatica = direccionEstatica - symbol.getType().getSize();
+					//Si está declarada en el ámbito global, se añade la cuádrupla para inicializarla
+					if(scope.getLevel() == 0) {
+						Variable var = new Variable(symbol.getName(),symbol);
+						cb.addQuadruple("VAR",var,0);
+					}
+				}
+			}
+			//Asignación de posiciones a los temporales e inicialización de los mismos
+			List<TemporalIF> temporals = scope.getTemporalTable().getTemporals();
+			//Recorremos los temporales
+			for (TemporalIF t: temporals) {
+				if (t instanceof Temporal) {
+					//Asignamos una dirección y restamos el tamaño del temporal a la dirección actual
+					((Temporal)t).setAddress(direccionEstatica);
+					direccionEstatica = direccionEstatica - ((Temporal)t).getSize();
+				}
+			}
+			if(scope.getLevel() == 0) {
+				//Guardamos las quadruplas del axiom, la quadrupla del fin del programa y las etiquetas de texto
+				cb.addQuadruples(ax.getIntermediateCode());
+				cb.addQuadruple("HALT");
+				for (int i=0; i< listaCadenas.size(); i++) {
+					cb.addQuadruple(listaCadenas.get(i));
+				}
+				ax.setIntermediateCode(cb.create());	
+				System.out.println("CI AXIOM: " + ax.getIntermediateCode());
+				List intermediateCode = ax.getIntermediateCode ();
+				finalCodeFactory.setEnvironment(CompilerContext.getExecutionEnvironment());
+				finalCodeFactory.create (intermediateCode);
+			}
+		}
+
+		//Cerramos el ámbito	
+        System.out.println("Cerrado el ámbito " + scopeManager.getCurrentScope().getName());
+      	scopeManager.closeScope();
+		
+  :};
+
+
+axiom ::= cabModule:cabModule
+
+                      
+                    cuerpo:cuerpo
+{:
+		Axiom axiom = new AxiomImpl(cabModule,cuerpo);
+
+		//Código intermedio
+		IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+		cb.addQuadruples(cuerpo.getIntermediateCode());
+		axiom.setIntermediateCode(cb.create());
+
+		RESULT = axiom;
+:}                    
+                | cabModule error   ;
+
+
+// Cabecera de los modulos
+cabModule     ::= MODULE IDENTIFICADOR:identificador PUNTOYCOMA
+{:
+				//Abrimos el ámbito
+				String nombre = identificador.getLexema().toUpperCase();
+				scopeManager.openScope(nombre);
+				System.out.println("Abierto el ámbito " + scopeManager.getCurrentScope().getName() + " - Nivel: " + scopeManager.getCurrentScope().getLevel());
+					
+				//Añadir tipos simples
+				ScopeIF scope = scopeManager.getCurrentScope();
+				TypeTableIF typeTable = scope.getTypeTable();
+				TypeSimpleInteger typeInteger = new TypeSimpleInteger(scope);
+				typeTable.addType(typeInteger);
+				TypeSimpleBoolean typeBoolean = new TypeSimpleBoolean(scope);
+				typeTable.addType(typeBoolean);
+
+				CabModule cabModule = new CabModule(nombre);
+				RESULT = cabModule;
+:}
+                      
+                | MODULE error
+                      ;
+
+// Cuerpo de los modulos y comun para procedimientos y funciones
+cuerpo        ::= stmConstantes:stmConstantes stmTipos:stmTipos stmVar:stmVar stmSubprogram:stmSubprogram BEGIN sentencias:sentencias END IDENTIFICADOR PUNTOYCOMA
+{:
+				Cuerpo cuerpo = new Cuerpo(	stmConstantes, stmTipos, stmVar, stmSubprogram, sentencias);
+				ScopeIF scope = scopeManager.getCurrentScope();
+				
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(sentencias.getIntermediateCode());
+				cuerpo.setIntermediateCode(cb.create());
+
+				RESULT = cuerpo;
+:}
+                      
+                | stmConstantes stmTipos stmVar stmSubprogram BEGIN sentencias END error
+                      
+                | stmConstantes stmTipos stmVar stmSubprogram BEGIN error
+                      ;
+
+// Reglas de producción para constantes
+stmConstantes ::= CONST sentConst:sentConst
+{:
+				StmConstantes stmConstantes = new StmConstantes(sentConst);
+				RESULT = stmConstantes;
+:}                    
+                | // epsilon
+{:
+				StmConstantes stmConstantes = new StmConstantes();
+				RESULT = stmConstantes;
+:}
+                | CONST error 
+                      ;
+sentConst     ::= sentConst:sentConst expConst:expConst
+{:
+  				sentConst.addExpConst(expConst);
+				RESULT = sentConst;
+:}                    
+                | expConst:expConst
+{:
+				SentConst sentConst = new SentConst(expConst);
+				RESULT = sentConst;
+:}
+                      ;
+expConst      ::= IDENTIFICADOR:identificador IGUAL valorConst:valorConst PUNTOYCOMA
+{:	
+
+				ScopeIF scope = scopeManager.getCurrentScope();
+				SymbolTableIF symbolTable = scope.getSymbolTable();
+				String nombre = identificador.getLexema().toUpperCase();
+
+				//Comprobación semántica: no existe otro símbolo con ese identificador
+				if(scopeManager.containsSymbol(nombre)) {
+					semanticErrorManager.semanticFatalError("Ya existe un símbolo con el identificador " + nombre + " - línea: " + identificador.getLine()); 
+				} else if (valorConst instanceof Integer) {
+					TypeIF typeInteger = scopeManager.searchType("INTEGER");
+					SymbolConstant symbolConstant = new SymbolConstant(scope,nombre,typeInteger,(Integer)valorConst);
+					symbolTable.addSymbol(symbolConstant);
+					ExpConst expConst = new ExpConst(nombre,(Integer)valorConst);
+					RESULT = expConst;
+				} else if (valorConst instanceof Boolean) {
+					TypeIF typeBoolean = scopeManager.searchType("BOOLEAN");
+					SymbolConstant symbolConstant = new SymbolConstant(scope,nombre,typeBoolean,(Boolean)valorConst);
+					symbolTable.addSymbol(symbolConstant);
+					ExpConst expConst = new ExpConst(nombre,(Boolean)valorConst);
+					RESULT = expConst;
+				} else {
+					semanticErrorManager.semanticFatalError("Error inesperado en la declaración de constantes"); 
+				}
+
+:}
+                      
+                | IDENTIFICADOR error PUNTOYCOMA 
+                      ;
+valorConst    ::= ENTERO:entero
+{:
+				int e = Integer.parseInt(entero.getLexema());
+				RESULT = e;
+:}     
+                | vBooleano:vBooleano
+{:
+				RESULT = vBooleano;
+:}
+                      ;
+
+// Reglas de producción para Tipos
+stmTipos      ::= TYPE sentTipo:sentTipo
+{:
+				StmTipos stmTipos = new StmTipos(sentTipo);
+				RESULT = stmTipos;
+:}
+                | // epsilon
+{:
+				StmTipos stmTipos = new StmTipos();
+				RESULT = stmTipos;
+:}
+                | TYPE error
+                      ;
+sentTipo      ::= sentTipo:sentTipo expTipo:expTipo
+{:
+  				sentTipo.addExpTipo(expTipo);
+				RESULT = sentTipo;		
+:}                    
+                | expTipo:expTipo
+{:
+				SentTipo sentTipo = new SentTipo(expTipo);
+				RESULT = sentTipo;
+:}
+                      ;
+expTipo       ::= IDENTIFICADOR:identificador IGUAL ARRAY CORCHIZQ entOid:inicio PUNTOPUNTO entOid:fin CORCHDER OF intOBool:intOBool PUNTOYCOMA
+{:		
+				ScopeIF scope = scopeManager.getCurrentScope();
+				SymbolTableIF symbolTable = scope.getSymbolTable();
+				TypeTableIF typeTable = scope.getTypeTable();
+				String nombre = identificador.getLexema().toUpperCase();
+
+				//Comprobación semántica: el rango del array es correcto
+				if(fin < inicio) {
+					semanticErrorManager.semanticFatalError("Rango del array " + nombre + " incorrecto - línea: " + identificador.getLine()); 
+				}
+
+				//Comprobación semántica: ya existe un tipo con este identificador
+				if(scopeManager.containsType(nombre)) {
+					semanticErrorManager.semanticFatalError("Tipo " + nombre + " ya declarado - línea: " + identificador.getLine()); 
+				} else {
+					TypeArray expTipo = new TypeArray(scopeManager.getCurrentScope(),nombre,inicio,fin,intOBool);
+					typeTable.addType(expTipo);
+					RESULT = expTipo;
+				}
+  				
+:}                     
+                | IDENTIFICADOR error PUNTOYCOMA
+                      ;
+
+// Reglas de producción para Variables
+stmVar        ::= VAR sentVar:sentVar
+{:
+  				StmVar stmVar = new StmVar(sentVar);
+				RESULT = stmVar;
+:}                     
+                | // epsilon
+{:
+				StmVar stmVar = new StmVar();
+				RESULT = stmVar;
+:}
+                | VAR error
+                      ;
+sentVar       ::= sentVar:sentVar expVar:expVar
+{:
+  				sentVar.addExpVar(expVar);
+				RESULT = sentVar;
+:}                    
+                | expVar:expVar
+{:
+				SentVar sentVar = new SentVar(expVar);
+				RESULT = sentVar;
+:}
+                      ;
+expVar        ::= cadIdVar:cadIdVar DOSPUNTOS tipoVar:tipoVar PUNTOYCOMA
+{:
+				ScopeIF scope = scopeManager.getCurrentScope();
+				SymbolTableIF symbolTable = scope.getSymbolTable();
+
+				//Comprobación semántica: no existe otro símbolo con ese identificador
+				for(String id : cadIdVar.getIdList()) {
+					if(scopeManager.containsSymbol(id.toUpperCase())) {
+						semanticErrorManager.semanticFatalError("Ya existe un símbolo con el identificador " + id);
+					} else {
+						SymbolVariable symbolVariable = new SymbolVariable(scope,id,tipoVar);
+						symbolTable.addSymbol(symbolVariable);
+					} 			
+				}
+
+				ExpVar expVar = new ExpVar(cadIdVar,tipoVar);
+				RESULT = expVar;
+:}                      
+                | cadIdVar error PUNTOYCOMA
+                      ;
+cadIdVar      ::= IDENTIFICADOR:identificador COMA cadIdVar:cadIdVar
+{:
+				cadIdVar.addIdentificador(identificador.getLexema().toUpperCase());
+				RESULT = cadIdVar;
+:}
+                      
+                | IDENTIFICADOR:identificador
+{:
+				CadIdVar cadIdVar = new CadIdVar(identificador.getLexema().toUpperCase());
+				RESULT = cadIdVar;
+:}
+                      ;
+tipoVar       ::= intOBool:intOBool
+{:
+				if(intOBool instanceof TypeSimpleInteger) {
+					TypeSimpleInteger typeInteger = new TypeSimpleInteger(scopeManager.getCurrentScope());
+					RESULT = typeInteger;
+				} else if(intOBool instanceof TypeSimpleBoolean) {
+					TypeSimpleBoolean typeBoolean = new TypeSimpleBoolean(scopeManager.getCurrentScope());
+					RESULT = typeBoolean;
+				}      
+:}                 
+                | IDENTIFICADOR:identificador
+{:
+				String nombre = identificador.getLexema().toUpperCase();
+
+				//Comprobación semántica: existe el tipo
+				if(scopeManager.containsType(nombre)) {
+					RESULT = (TypeArray)scopeManager.searchType(nombre);
+				} else {
+					semanticErrorManager.semanticFatalError("No existe el tipo " + nombre + " - línea: " + identificador.getLine());
+				}
+:}
+                      ;
+
+// Reglas de producción para Procedimientos y funciones
+stmSubprogram  ::= cabProcedure:cabProcedure
+                      
+                    cuerpo:cuerpo
+
+                    stmSubprogram:stmSubprogram
+{:
+				stmSubprogram.addCuerpoProcedure(cabProcedure,cuerpo);
+				RESULT = stmSubprogram;		
+
+				//Comprobamos que el tipoRetorno y la expresion retorno coinciden y además existe sentencia return
+				boolean tieneReturn = false;
+				if(cabProcedure.getTipoRetorno().getIntOBool() != null) {
+					String nombre = cabProcedure.getIdentificador().toUpperCase();
+					TypeIF cabeceraType = cabProcedure.getTipoRetorno().getIntOBool();
+					List sentenciaList = cuerpo.getSentencias().getListSentencia().getSentenciaList();
+					for(int i = 0 ; i < sentenciaList.size(); i++) {
+						Sentencia sentencia = (Sentencia)sentenciaList.get(i);
+						if(sentencia.getType() == Sentencia.TypeSentencia.RETURN){
+							SentReturn sentReturn = (SentReturn)sentencia.getSentReturn();
+							TypeIF returnType = getTypeExpresion(sentReturn.getExpresion());
+							if(!(cabeceraType.getName().equals(returnType.getName()))) {
+								semanticErrorManager.semanticFatalError("La función " + nombre + " tiene una expresión incorrecta en su sentencia RETURN");
+							}
+							tieneReturn = true;
+						}
+					}
+					if(tieneReturn == false) {
+						semanticErrorManager.semanticFatalError("La función " + nombre + " no tiene sentencia RETURN");
+					}
+				}			
+
+				//Cerramos el ámbito
+				ScopeIF scope = scopeManager.getCurrentScope();
+				if(scope.getLevel() != 0) {
+                	if(scope!=null){
+                		System.out.println("Cerrado el ámbito " + scopeManager.getCurrentScope().getName());
+                		scopeManager.closeScope();
+                	}
+                }
+                
+:}
+                      
+                | // epsilon
+{:
+				StmSubprogram stmSubprogram = new StmSubprogram();
+				RESULT = stmSubprogram;
+
+:}
+                      ;
+cabProcedure   ::= PROCEDURE IDENTIFICADOR:identificador procParenParam:procParenParam tipoRetorno:tipoRetorno PUNTOYCOMA
+{:
+				ScopeIF scope = scopeManager.getCurrentScope();
+				SymbolTableIF symbolTable = scope.getSymbolTable();
+				TypeTableIF typeTable = scope.getTypeTable();
+				String nombre = identificador.getLexema().toUpperCase();
+
+				//Comprobación semántica: no existe otro símbolo con ese identificador
+				if(scopeManager.containsSymbol(nombre)) {
+					semanticErrorManager.semanticFatalError("Ya existe un símbolo con el identificador " + nombre + " incorrecto - línea: " + identificador.getLine());
+				}
+				
+				CabProcedure cabProcedure = new CabProcedure(nombre,procParenParam,tipoRetorno,scope);
+				RESULT = cabProcedure;
+
+				//Añadimos a la tabla de tipos y de símbolos
+				if(tipoRetorno.getIntOBool() != null) {
+					TypeFunction typeFunction = new TypeFunction(scope,nombre);
+					typeTable.addType(typeFunction);
+					SymbolFunction symbolFunction = new SymbolFunction(scope,nombre,typeFunction,RESULT);
+					symbolTable.addSymbol(symbolFunction);
+				} else {
+					TypeProcedure typeProcedure = new TypeProcedure(scope,nombre);
+					typeTable.addType(typeProcedure);
+					SymbolProcedure symbolProcedure = new SymbolProcedure(scope,nombre,typeProcedure,RESULT);
+					symbolTable.addSymbol(symbolProcedure);
+				}
+
+				//Abrimos el ámbito
+				scopeManager.openScope(nombre);
+				System.out.println("Abierto el ámbito " + scopeManager.getCurrentScope().getName() + " - Nivel: " + scopeManager.getCurrentScope().getLevel());
+				ScopeIF scopeProcedure = scopeManager.getCurrentScope();
+				SymbolTableIF symbolTableProcedure = scopeProcedure.getSymbolTable();
+				
+				//Comprobación semántica: no existe otro símbolo con ese identificador para los parámetros y addición de los mismos
+				for(ProcParam procParam : procParenParam.getProcListParam().getProcParamList()) { 
+					if(procParam.getCadIdVar() != null){
+						for(String idParam : procParam.getCadIdVar().getIdList()){
+							if(scopeManager.searchSymbol(idParam) == null) {
+								TypeIF type = scopeManager.searchType(procParam.getTipoVar().getName());
+								SymbolParameter symbolParameter = new SymbolParameter(scopeProcedure, idParam, type);
+                                symbolTableProcedure.addSymbol(symbolParameter);
+							}
+						}
+					}
+				}
+
+				
+:}
+                      
+                |  PROCEDURE IDENTIFICADOR error 
+                      
+                |  PROCEDURE error
+                      ;
+procParenParam ::= PARENIZQ procListParam:procListParam PARENDER
+{:
+				ProcParenParam procParenParam = new ProcParenParam(procListParam);
+				RESULT = procParenParam;
+:}                      
+                | // epsilon
+{:
+				ProcParenParam procParenParam = new ProcParenParam();
+				RESULT = procParenParam;
+:}
+                      ;  // epsilon
+procListParam  ::= procParam:procParam PUNTOYCOMA procListParam:procListParam
+{:
+  				procListParam.addProcParam(procParam);
+				RESULT = procListParam;
+:}                    
+                |  procParam:procParam
+{:
+  				ProcListParam procListParam = new ProcListParam(procParam);
+				RESULT = procListParam;
+:}                       
+                |  // epsilon
+{:
+  				ProcListParam procListParam = new ProcListParam();
+				RESULT = procListParam;
+:}
+                      ;  // epsilon
+procParam      ::= cadIdVar:cadIdVar DOSPUNTOS tipoVar:tipoVar
+{:
+				ProcParam procParam = new ProcParam(cadIdVar,tipoVar);
+				RESULT = procParam;
+:}                    
+                |  cadIdVar error PUNTOYCOMA  
+                      ;
+
+tipoRetorno    ::= DOSPUNTOS intOBool:intOBool
+{:
+				TipoRetorno tipoRetorno = new TipoRetorno(intOBool);
+				RESULT = tipoRetorno;
+:}                    
+                |  // epsilon
+{:
+				TipoRetorno tipoRetorno = new TipoRetorno();
+				RESULT = tipoRetorno;
+:}
+                        // epsilon
+                |  DOSPUNTOS error PUNTOYCOMA 
+                      ;
+
+// expresion logicas y aritmeticas.
+expresion     ::= exprArit:exprArit
+{:
+  				Expresion expresion = new Expresion(exprArit);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(exprArit.getIntermediateCode());
+				expresion.setIntermediateCode(cb.create());
+				expresion.setTemporal(exprArit.getTemporal());
+
+				RESULT = expresion;
+:}                    
+                | exprLogica:exprLogica
+{:
+  				Expresion expresion = new Expresion(exprLogica);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(exprLogica.getIntermediateCode());
+				expresion.setIntermediateCode(cb.create());
+				expresion.setTemporal(exprLogica.getTemporal());			
+
+				RESULT = expresion;
+:}                       
+                | PARENIZQ expresion:expresion PARENDER
+{:
+				expresion.addExpresion(expresion);
+
+				RESULT = expresion;
+
+:}                        
+                | variables:variables
+{:
+				Expresion expresion = new Expresion(variables);
+
+				//Código intermedio
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				TemporalIF vTemp = variables.getTemporal();
+				SymbolIF symbol = scopeManager.searchSymbol(variables.getIdentificador());
+				cb.addQuadruples(variables.getIntermediateCode());
+				if(symbol instanceof SymbolVariable) {
+					cb.addQuadruple("REF",vTemp);
+				} 
+				expresion.setTemporal(vTemp);
+				expresion.setIntermediateCode(cb.create());
+
+				RESULT = expresion;
+:}
+                      ;
+
+// Reglas de produccion para expresiones aritmeticas.
+exprArit      ::= expresion:expresion1 MINUS expresion:expresion2
+{:
+				ExprArit exprArit = new ExprArit("-",expresion1,expresion2);
+
+				//Comprobación semántica: las expresiones són aritméticas
+				if(!(getTypeExpresion(expresion1) instanceof TypeSimpleInteger) || !(getTypeExpresion(expresion2) instanceof TypeSimpleInteger)) {
+					semanticErrorManager.semanticFatalError("Expresión aritmética con expresiones de tipo incorrecto");
+				}
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				TemporalIF temp1 = expresion1.getTemporal();
+				TemporalIF temp2 = expresion2.getTemporal();
+				TemporalIF temp = tf.create();
+				cb.addQuadruples(expresion1.getIntermediateCode());
+				cb.addQuadruples(expresion2.getIntermediateCode());
+				cb.addQuadruple("SUB",temp,temp1,temp2);
+				exprArit.setTemporal(temp);
+				exprArit.setIntermediateCode(cb.create());
+
+				RESULT = exprArit;
+:}                      
+                | expresion:expresion1 PRODUCTO expresion:expresion2
+{:
+				ExprArit exprArit = new ExprArit("*",expresion1,expresion2);
+
+				//Comprobación semántica: las expresiones són aritméticas
+				if(!(getTypeExpresion(expresion1) instanceof TypeSimpleInteger) || !(getTypeExpresion(expresion2) instanceof TypeSimpleInteger)) {
+					semanticErrorManager.semanticFatalError("Expresión aritmética con expresiones de tipo incorrecto");
+				}
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				TemporalIF temp1 = expresion1.getTemporal();
+				TemporalIF temp2 = expresion2.getTemporal();
+				TemporalIF temp = tf.create();
+				cb.addQuadruples(expresion1.getIntermediateCode());
+				cb.addQuadruples(expresion2.getIntermediateCode());
+				cb.addQuadruple("MUL",temp,temp1,temp2);
+				exprArit.setTemporal(temp);
+				exprArit.setIntermediateCode(cb.create());
+
+				RESULT = exprArit;
+:}                           
+                | ENTERO:entero
+{:
+				ExprArit exprArit = new ExprArit(Integer.parseInt(entero.getLexema()));
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				TemporalIF temp = tf.create();
+				cb.addQuadruple("MV",temp,Integer.parseInt(entero.getLexema()));
+				exprArit.setTemporal(temp);
+				exprArit.setIntermediateCode(cb.create());
+
+				RESULT = exprArit;
+:}     
+                      ;
+
+// Reglas de produccion para expresiones logicas.
+exprLogica    ::= expresion:expresion1 MAYOR expresion:expresion2
+{:
+				ExprLogica exprLogica = new ExprLogica(">",expresion1,expresion2);
+
+				//Comprobación semántica: las expresiones són lógicas
+				if(!(getTypeExpresion(expresion1) instanceof TypeSimpleInteger) || !(getTypeExpresion(expresion2) instanceof TypeSimpleInteger)) {
+					semanticErrorManager.semanticFatalError("Expresión lógica con expresiones de tipo incorrecto");
+				}
+			
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				TemporalIF temp1 = expresion1.getTemporal();
+				TemporalIF temp2 = expresion2.getTemporal();
+				TemporalIF temp = tf.create();
+				cb.addQuadruples(expresion1.getIntermediateCode());
+				cb.addQuadruples(expresion2.getIntermediateCode());
+				cb.addQuadruple("GR",temp,temp1,temp2);
+				exprLogica.setTemporal(temp);
+				exprLogica.setIntermediateCode(cb.create());
+
+				RESULT = exprLogica;
+:}                      
+                | expresion:expresion1 IGUAL expresion:expresion2
+{:
+				ExprLogica exprLogica = new ExprLogica("=",expresion1,expresion2);
+
+				//Comprobación semántica: las expresiones són lógicas
+				if(!(getTypeExpresion(expresion1) instanceof TypeSimple) || !(getTypeExpresion(expresion2) instanceof TypeSimple)) {
+					semanticErrorManager.semanticFatalError("Expresión lógica con expresiones de tipo incorrecto");
+				}
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				TemporalIF temp1 = expresion1.getTemporal();
+				TemporalIF temp2 = expresion2.getTemporal();
+				TemporalIF temp = tf.create();
+				cb.addQuadruples(expresion1.getIntermediateCode());
+				cb.addQuadruples(expresion2.getIntermediateCode());
+				cb.addQuadruple("EQ",temp,temp1,temp2);
+				exprLogica.setTemporal(temp);
+				exprLogica.setIntermediateCode(cb.create());
+
+				RESULT = exprLogica;
+:}                       
+                | expresion:expresion1 OR expresion:expresion2
+{:
+				ExprLogica exprLogica = new ExprLogica("OR",expresion1,expresion2);
+
+				//Comprobación semántica: las expresiones són lógicas
+				if(!(getTypeExpresion(expresion1) instanceof TypeSimpleBoolean) || !(getTypeExpresion(expresion2) instanceof TypeSimpleBoolean)) {
+					semanticErrorManager.semanticFatalError("Expresión lógica con expresiones de tipo incorrecto");
+				}
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				TemporalIF temp1 = expresion1.getTemporal();
+				TemporalIF temp2 = expresion2.getTemporal();
+				TemporalIF temp = tf.create();
+				cb.addQuadruples(expresion1.getIntermediateCode());
+				cb.addQuadruples(expresion2.getIntermediateCode());
+				cb.addQuadruple("OR",temp,temp1,temp2);
+				exprLogica.setTemporal(temp);
+				exprLogica.setIntermediateCode(cb.create());
+
+				RESULT = exprLogica;
+:}                       
+                | NOT expresion:expresion1
+{:
+				ExprLogica exprLogica = new ExprLogica("NOT",expresion1);
+
+				//Comprobación semántica: las expresiones són lógicas
+				if(!(getTypeExpresion(expresion1) instanceof TypeSimpleBoolean)) {
+					semanticErrorManager.semanticFatalError("Expresión lógica con expresiones de tipo incorrecto");
+				}
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				TemporalIF temp1 = expresion1.getTemporal();
+				TemporalIF temp = tf.create();
+				cb.addQuadruples(expresion1.getIntermediateCode());
+				cb.addQuadruple("NOT",temp,temp1);
+				exprLogica.setTemporal(temp);
+				exprLogica.setIntermediateCode(cb.create());
+
+				RESULT = exprLogica;
+:}                      
+                | vBooleano:vBooleano
+{:
+				ExprLogica exprLogica = new ExprLogica(vBooleano);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				TemporalIF temp = tf.create();
+				boolean bool = vBooleano;
+				if(bool == true) {
+					cb.addQuadruple("MV",temp,new Value(1));
+				} else {
+					cb.addQuadruple("MV",temp,new Value(0));
+				}
+				exprLogica.setTemporal(temp);
+				exprLogica.setIntermediateCode(cb.create());
+
+				RESULT = exprLogica;
+:}
+                      ;
+
+// Reglas para sentencias.
+sentencias    ::= listSentencia:listSentencia PUNTOYCOMA
+{:
+				Sentencias sentencias = new Sentencias(listSentencia);
+				
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(listSentencia.getIntermediateCode());
+				sentencias.setIntermediateCode(cb.create());
+
+				RESULT = sentencias;
+:}
+                | listSentencia:listSentencia
+{:
+  				Sentencias sentencias = new Sentencias(listSentencia);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(listSentencia.getIntermediateCode());
+				sentencias.setIntermediateCode(cb.create());
+
+				RESULT = sentencias;
+:}                     
+                |  // epsilon
+{:
+				Sentencias sentencias = new Sentencias();
+				RESULT = sentencias;
+:}
+                      ;  // epsilon
+
+listSentencia ::= listSentencia:listSentencia PUNTOYCOMA sentencia:sentencia
+{:		
+				listSentencia.addSentencia(sentencia);
+				
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				List<QuadrupleIF> sentenciasQuadruples = new ArrayList<>();
+				for(Sentencia sent : listSentencia.getSentenciaList()) {
+					sentenciasQuadruples.addAll(sent.getIntermediateCode());
+				}
+				cb.addQuadruples(sentenciasQuadruples);
+				listSentencia.setIntermediateCode(cb.create());
+
+				RESULT = listSentencia;
+:}                    
+                | sentencia:sentencia
+{:
+				ListSentencia listSentencia = new ListSentencia(sentencia);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(sentencia.getIntermediateCode());
+				listSentencia.setIntermediateCode(cb.create());
+
+				RESULT = listSentencia;
+:}
+                    ;
+
+sentencia     ::= sentAsign:sentAsign
+{:
+				Sentencia sentencia = new Sentencia(sentAsign);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(sentAsign.getIntermediateCode());
+				sentencia.setIntermediateCode(cb.create());
+				sentencia.setTemporal(sentAsign.getTemporal());
+
+				RESULT = sentencia;
+:}                      
+                | sentIf:sentIf
+{:
+				Sentencia sentencia = new Sentencia(sentIf);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(sentIf.getIntermediateCode());
+				sentencia.setIntermediateCode(cb.create());
+				sentencia.setTemporal(sentIf.getTemporal());
+
+				RESULT = sentencia;
+:}                       
+                | sentFor:sentFor
+{:
+				Sentencia sentencia = new Sentencia(sentFor);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(sentFor.getIntermediateCode());
+				sentencia.setIntermediateCode(cb.create());
+				sentencia.setTemporal(sentFor.getTemporal());
+
+				RESULT = sentencia;
+:}                          
+                | sentReturn:sentReturn
+{:
+				Sentencia sentencia = new Sentencia(sentReturn);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(sentReturn.getIntermediateCode());
+				sentencia.setIntermediateCode(cb.create());
+				sentencia.setTemporal(sentReturn.getTemporal());
+
+				RESULT = sentencia;
+:}                           
+                | sWriteString:sWriteString
+{:
+				Sentencia sentencia = new Sentencia(sWriteString);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(sWriteString.getIntermediateCode());
+				sentencia.setIntermediateCode(cb.create());
+				sentencia.setTemporal(sWriteString.getTemporal());
+
+				RESULT = sentencia;
+:}                           
+                | sWriteInt:sWriteInt
+{:
+				Sentencia sentencia = new Sentencia(sWriteInt);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(sWriteInt.getIntermediateCode());
+				sentencia.setIntermediateCode(cb.create());
+				sentencia.setTemporal(sWriteInt.getTemporal());
+
+				RESULT = sentencia;
+:}                           
+                | sWriteLn:sWriteLn
+{:
+				Sentencia sentencia = new Sentencia(sWriteLn);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(sWriteLn.getIntermediateCode());
+				sentencia.setIntermediateCode(cb.create());
+				sentencia.setTemporal(sWriteLn.getTemporal());
+
+				RESULT = sentencia;
+:}                           
+                | sentProcedure:sentProcedure
+{:
+				Sentencia sentencia = new Sentencia(sentProcedure);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruples(sentProcedure.getIntermediateCode());
+				sentencia.setIntermediateCode(cb.create());
+				sentencia.setTemporal(sentProcedure.getTemporal());
+
+				RESULT = sentencia;
+:}            
+                      ;
+
+// Sentencias Return
+sentReturn     ::= RETURN expresion:expresion
+{:
+				SentReturn sentReturn = new SentReturn(expresion);
+				RESULT = sentReturn;
+:}                    
+                |  RETURN error PUNTOYCOMA  
+                      ;
+
+// Sentencias de Asignacion
+sentAsign     ::= variables:variables DOSPUNTOSIGUAL expresion:expresion
+{:
+				SentAsign sentAsign = new SentAsign(variables,expresion);
+				String nombre = variables.getIdentificador().toUpperCase();
+				SymbolIF symbolVariables = scopeManager.searchSymbol(nombre);
+				ScopeIF scope = scopeManager.getCurrentScope();
+				//Comprobación semántica: se asigna a una constante
+				if(symbolVariables instanceof SymbolConstant) {
+					semanticErrorManager.semanticFatalError(nombre + " es una constante, no es posible asignarle un valor");
+				}
+
+				//Comprobación semántica: concordancia de tipos entre variables y expresión
+				if(symbolVariables.getType() instanceof TypeArray) {
+					TypeArray type = (TypeArray)symbolVariables.getType();
+					if(!(type.getType().getName().equals(getTypeExpresion(expresion).getName()))) {
+						semanticErrorManager.semanticFatalError("Error de concordancia de tipos en la asignación de " + nombre); 
+					}
+				} else {
+					TypeIF type = getTypeExpresion(expresion);
+					if(!(type.getName().equals(symbolVariables.getType().getName()))) {
+						semanticErrorManager.semanticFatalError("Error de concordancia de tipos en la asignación de " + nombre);
+					}
+				}
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scope);
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scope);
+				TemporalIF eTemp = expresion.getTemporal();
+				TemporalIF vTemp = variables.getTemporal();
+				cb.addQuadruples(expresion.getIntermediateCode());		
+				cb.addQuadruples(variables.getIntermediateCode());	
+				cb.addQuadruple("STP",vTemp,eTemp);
+				sentAsign.setIntermediateCode(cb.create());
+				System.out.println(sentAsign.getIntermediateCode());
+				
+				RESULT = sentAsign;
+:}                    
+                | variables error PUNTOYCOMA 
+                      ;
+                      
+// Sentencia IF-ELSE
+sentIf        ::= IF expresion:expresion THEN sentencias:sentencias sentElse:sentElse END
+{:
+				//Abrimos el ámbito
+				controlScope++;
+				String nombre = "IF" + (controlScope-1);
+				scopeManager.openScope(nombre);
+				System.out.println("Abierto el ámbito " + scopeManager.getCurrentScope().getName() + " - Nivel: " + scopeManager.getCurrentScope().getLevel());
+
+				SentIf sentIf = new SentIf(expresion,sentencias,sentElse);
+				ScopeIF scope = scopeManager.getCurrentScope();			
+
+				//Comprobación semántica: la expresión condicional es lógica
+				if(!(expresion.getExprLogica() != null)) {
+					semanticErrorManager.semanticFatalError("La expresión condicional de la sentencia IF no es lógica");
+				}
+
+				//Código intermedio
+				LabelFactory lf = new LabelFactory();
+				LabelIF label1 = lf.create();
+				LabelIF label2 = lf.create();
+				TemporalIF eTemp = expresion.getTemporal();
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scope);
+				cb.addQuadruples(expresion.getIntermediateCode());
+				cb.addQuadruple("BRF",eTemp,label2);
+				cb.addQuadruples(sentencias.getIntermediateCode());
+				cb.addQuadruple("BR",label1);
+				cb.addQuadruple("INL",label2);
+				if(sentElse.getSentencias() != null) {
+					cb.addQuadruples(sentElse.getIntermediateCode());
+					cb.addQuadruple("INL",label1);
+				}
+				sentIf.setIntermediateCode(cb.create());
+				System.out.println(sentIf.getIntermediateCode());
+
+				RESULT = sentIf;
+
+				//Cerramos el ámbito
+				ScopeIF scopeIf = scopeManager.getCurrentScope();
+				if(scopeIf.getLevel() != 0) {
+                	if(scopeIf != null){
+                		System.out.println("Cerrado el ámbito " + scopeManager.getCurrentScope().getName());
+                		scopeManager.closeScope();
+                	}
+                }
+:}
+                      
+                | IF expresion error
+                      
+                | IF error PUNTOYCOMA
+		;
+                      
+sentElse      ::= ELSE sentencias:sentencias
+{:
+				//Abrimos el ámbito
+				String nombre = "ELSE" + controlScope;
+				scopeManager.openScope(nombre);
+				System.out.println("Abierto el ámbito " + scopeManager.getCurrentScope().getName() + " - Nivel: " + scopeManager.getCurrentScope().getLevel());
+
+				SentElse sentElse = new SentElse(sentencias);
+
+				//Código intermedio
+                TemporalFactoryIF tf = new TemporalFactory(scopeManager.getCurrentScope());
+                IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+                cb.addQuadruples(sentencias.getIntermediateCode());
+                sentElse.setIntermediateCode(cb.create());
+
+				RESULT = sentElse;
+
+				//Cerramos el ámbito
+				ScopeIF scope = scopeManager.getCurrentScope();
+				if(scope.getLevel() != 0) {
+                	if(scope!=null){
+                		System.out.println("Cerrado el ámbito " + scopeManager.getCurrentScope().getName());
+                		scopeManager.closeScope();
+                	}
+                }
+:}
+                |  // epsilon
+{:
+				SentElse sentElse = new SentElse();
+
+				RESULT = sentElse;
+:}
+                      ;
+
+// Sentencia FOR
+sentFor       ::= FOR IDENTIFICADOR:identificador DOSPUNTOSIGUAL expresion:inicio TO expresion:fin DO sentencias:sentencias END
+{:
+				//Abrimos el ámbito
+				String nombre = "FOR" + controlScope;
+				controlScope++;
+				scopeManager.openScope(nombre);
+				System.out.println("Abierto el ámbito " + scopeManager.getCurrentScope().getName() + " - Nivel: " + scopeManager.getCurrentScope().getLevel());
+
+				SentFor sentFor = new SentFor(identificador.getLexema().toUpperCase(),inicio,fin,sentencias);
+				ScopeIF scope = scopeManager.getCurrentScope();
+				SymbolIF symbol = scopeManager.searchSymbol(identificador.getLexema().toUpperCase());
+
+				//Comprobación semántica: las expresiones de inicio y fin son enteros
+				if(!(getTypeExpresion(inicio) instanceof TypeSimpleInteger) || !(getTypeExpresion(fin) instanceof TypeSimpleInteger)) {
+					semanticErrorManager.semanticFatalError(nombre + " no existe, no se le puede hacer una llamada");
+				}
+
+				//Comprobación semántica: el identificador existe
+				if(!(scopeManager.containsSymbol(identificador.getLexema().toUpperCase()))) {
+					semanticErrorManager.semanticFatalError("No existe el símbolo " + nombre + " - línea: " + identificador.getLine());
+				}
+
+				//Código intermedio	
+				IntermediateCodeBuilderIF cb = new IntermediateCodeBuilder(scope);
+                LabelFactoryIF lf = new LabelFactory();
+                TemporalFactoryIF tf = new TemporalFactory(scope);
+                LabelIF label1 = lf.create();
+                LabelIF label2 = lf.create();
+				Variable var = new Variable(nombre,symbol);
+				cb.addQuadruples(inicio.getIntermediateCode());
+                cb.addQuadruple("MV", var, inicio.getTemporal());
+                cb.addQuadruple("INL",label1);
+                cb.addQuadruples(fin.getIntermediateCode());
+                cb.addQuadruple("INC", fin.getTemporal());
+                cb.addQuadruple("BRF",label2, var, fin.getTemporal());
+                cb.addQuadruples(sentencias.getIntermediateCode());
+                cb.addQuadruple("INC", var);
+                cb.addQuadruple("BR",label1);
+                cb.addQuadruple("INL",label2);
+                sentFor.setIntermediateCode(cb.create());	
+				System.out.println(sentFor.getIntermediateCode());
+	
+				//Cerramos el ámbito
+				ScopeIF scopeFor = scopeManager.getCurrentScope();
+				if(scopeFor.getLevel() != 0) {
+                	if(scopeFor != null){
+                		System.out.println("Cerrado el ámbito " + scopeManager.getCurrentScope().getName());
+                		scopeManager.closeScope();
+                	}
+                }
+
+				RESULT = sentFor;
+
+				
+:}                      
+                | FOR IDENTIFICADOR DOSPUNTOSIGUAL expresion TO expresion error PUNTOYCOMA 
+                      
+                | FOR error PUNTOYCOMA
+                      ;
+
+// Sentencia llamada Procedimiento
+sentProcedure ::= IDENTIFICADOR:identificador
+{:
+				String nombre = identificador.getLexema().toUpperCase();
+
+				//Comprobación semántica: se trata de una función o un procedimiento
+				if(!(scopeManager.containsSymbol(nombre))) {
+					semanticErrorManager.semanticFatalError(nombre + " no existe, no se le puede hacer una llamada");
+				} else if(!(scopeManager.searchSymbol(nombre) instanceof SymbolProcedure) && !(scopeManager.searchSymbol(nombre) instanceof SymbolFunction)) {
+					
+					semanticErrorManager.semanticFatalError(nombre + " no es una función o un procedimiento, no se le puede hacer una llamada");
+				}
+
+				SentProcedure sentProcedure = new SentProcedure(nombre);
+
+				RESULT = sentProcedure;
+:}                      
+                | IDENTIFICADOR:identificador parFuncion:parFuncion
+{:
+				String nombre = identificador.getLexema().toUpperCase();
+
+				//Comprobación semántica: se trata de una función o un procedimiento
+				if(!(scopeManager.containsSymbol(nombre))) {
+					semanticErrorManager.semanticFatalError(nombre + " no existe, no se le puede hacer una llamada");
+				} else if(!(scopeManager.searchSymbol(nombre) instanceof SymbolProcedure) && !(scopeManager.searchSymbol(nombre) instanceof SymbolFunction)) {
+					System.out.println(scopeManager.searchSymbol(nombre).getName());
+					semanticErrorManager.semanticFatalError(nombre + " no es una función o un procedimiento, no se le puede hacer una llamada");
+				}
+
+				//Comprobación semántica: coinciden el número parámetros de la llamada y el procedimiento
+				SymbolProcedure symbol = (SymbolProcedure)scopeManager.searchSymbol(nombre);
+				int parametros = 0;
+				int talla = symbol.getCabProcedure().getProcParenParam().getProcListParam().getProcParamList().size();
+				for(int i = 0; i < talla; i++) {
+					ProcParam procParam = symbol.getCabProcedure().getProcParenParam().getProcListParam().getProcParamList().get(i);
+					parametros += procParam.getCadIdVar().getIdList().size();						
+				}
+				if(parFuncion.getParametros() != null && parFuncion.getParametros().getExpresionList().size() != parametros) {
+					semanticErrorManager.semanticFatalError("El número de parámetros no coincide con la llamada en el procedimiento " + nombre);
+				}
+
+				//Comprobación semántica: coinciden el tipo de parámetros de la llamada y el procedimiento
+				if(symbol.getCabProcedure().getProcParenParam().getProcListParam().getProcParamList() != null) {
+					int talla1 = symbol.getCabProcedure().getProcParenParam().getProcListParam().getProcParamList().size();
+					for(int i = 0; i < talla1; i++) {
+						ProcParam procParam = symbol.getCabProcedure().getProcParenParam().getProcListParam().getProcParamList().get(i);
+						CadIdVar cadIdVar = procParam.getCadIdVar();
+						TypeIF tipoVar = procParam.getTipoVar();
+						int talla2 = cadIdVar.getIdList().size();				
+						for(int j = 0; j < talla2; j++) {
+							TypeIF type1 = tipoVar;
+							TypeIF type2 = getTypeExpresion(parFuncion.getParametros().getExpresionList().get(j));
+							if(!(type1.getName().equals(type2.getName()))) {
+								semanticErrorManager.semanticFatalError("El tipo de parámetros no coincide con la llamada en el procedimiento " + nombre);
+							}
+						}
+					}
+				}
+
+				SentProcedure sentProcedure = new SentProcedure(nombre,parFuncion);
+
+				RESULT = sentProcedure;
+:}
+                      ;
+                  
+// Parametros de llamada a función
+parFuncion    ::= PARENIZQ parametros:parametros PARENDER
+{:
+				ParFuncion parFuncion = new ParFuncion(parametros);
+				RESULT = parFuncion;
+:}                      
+                | PARENIZQ PARENDER
+{:
+				ParFuncion parFuncion = new ParFuncion();
+				RESULT = parFuncion;
+:}
+                      
+                | PARENIZQ error 
+                      ;
+parametros    ::= parametros:parametros COMA expresion:expresion
+{:
+				parametros.addExpresion(expresion);
+				RESULT = parametros;
+:}             
+                | expresion:expresion
+{:
+				Parametros parametros = new Parametros(expresion);
+				RESULT = parametros;
+:}
+                      ;
+
+// Sentencias de Salida.
+sWriteString  ::= WRITESTRING PARENIZQ STRING:cadena PARENDER
+{:
+				SWriteString sWriteString = new SWriteString(cadena.getLexema());
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				String texto = cadena.getLexema();
+				LabelFactory lf = new LabelFactory();
+				LabelIF label = lf.create();
+				TemporalIF temp = tf.create();
+				cb.addQuadruple("WRITESTRING",temp,label);
+				listaCadenas.add(new Quadruple("CADENA",new Label(texto),label));
+				sWriteString.setIntermediateCode(cb.create());
+				System.out.println(sWriteString.getIntermediateCode());
+
+				RESULT = sWriteString;
+:}                      
+                | WRITESTRING error PUNTOYCOMA   
+                      ;
+sWriteInt     ::= WRITEINT PARENIZQ expresion:expresion PARENDER
+{:
+  				SWriteInt sWriteInt = new SWriteInt(expresion);
+				//Comprobación semántica: recibe una expresión aritmética
+				if(!(getTypeExpresion(expresion) instanceof TypeSimpleInteger)) {
+					semanticErrorManager.semanticFatalError("La función WriteInt debe recibir una expresión aritmética");
+				}
+
+				//Código intermedio
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				TemporalIF eTemp = expresion.getTemporal();
+				cb.addQuadruples(expresion.getIntermediateCode());
+				cb.addQuadruple("WRITEINT",eTemp);
+				sWriteInt.setIntermediateCode(cb.create());
+				System.out.println(sWriteInt.getIntermediateCode());
+
+				RESULT = sWriteInt;
+:}                    
+                | WRITEINT error PUNTOYCOMA
+                      ;
+sWriteLn      ::= WRITELN
+{:
+				SWriteLn sWriteLn = new SWriteLn();
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scopeManager.getCurrentScope());
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scopeManager.getCurrentScope());
+				cb.addQuadruple("WRITELN");
+				sWriteLn.setIntermediateCode(cb.create());
+				System.out.println(sWriteLn.getIntermediateCode());
+
+				RESULT = sWriteLn;
+:}			
+                      ;
+
+// Tipos Basicos
+variables     ::= IDENTIFICADOR:identificador
+{:	
+				String nombre = identificador.getLexema().toUpperCase();
+				ScopeIF scope = scopeManager.getCurrentScope();
+				SymbolIF symbol = scopeManager.searchSymbol(nombre);
+
+				//Comprobación semántica: el id existe
+				if(!(scopeManager.containsSymbol(nombre))) {
+					semanticErrorManager.semanticFatalError("El id " + nombre + " no existe");
+				}
+	
+				Variables variables = new Variables(nombre);
+				
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scope); 
+                IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scope); 
+                TemporalIF temp = tf.create();
+				if(symbol instanceof SymbolConstant) {
+					Value valor = new Value(((SymbolConstant)symbol).getEntero());
+					cb.addQuadruple("MV", temp, valor);
+				} else if (symbol instanceof SymbolVariable){
+					Variable var = new Variable(nombre, symbol);
+					cb.addQuadruple("MVA", temp, var);
+				}
+				variables.setTemporal(temp);
+				variables.setIntermediateCode(cb.create());
+					
+				RESULT = variables;
+:}
+                      
+                | IDENTIFICADOR:identificador idArray:idArray
+{:
+				String nombre = identificador.getLexema().toUpperCase();
+				ScopeIF scope = scopeManager.getCurrentScope();
+				SymbolIF symbol = scopeManager.searchSymbol(nombre);
+
+				//Comprobación semántica: acceso al array incorrecto
+				if(idArray.getExpresion().getExprArit() != null) {               		
+					Integer valor = new Integer(idArray.getExpresion().getExprArit().getValor());
+					if(valor != null) {
+						SymbolVariable symbolVar1 = (SymbolVariable)symbol;
+    					TypeIF type = symbolVar1.getType();
+    					if(type instanceof TypeArray) {
+   							TypeArray typeArray = (TypeArray) type;
+   							if(idArray.getExpresion().getExprArit().getValor() > typeArray.getFin()) {
+   								semanticErrorManager.semanticFatalError("Acceso incorrecto al array " + nombre);
+   							}
+							if(idArray.getExpresion().getExprArit().getValor() < typeArray.getInicio()) {
+   								semanticErrorManager.semanticFatalError("Acceso incorrecto al array " + nombre);
+   							}
+    					}
+					}
+				}
+
+				//Comprobación semántica: acceso al array incorrecto
+				TypeIF type2 = getTypeExpresion(idArray.getExpresion());
+				if(type2 instanceof TypeArray) {
+					TypeArray typeArray = (TypeArray)type2;
+					if(!(typeArray.getType() instanceof TypeSimpleInteger)) {
+						semanticErrorManager.semanticFatalError("Acceso incorrecto al array " + nombre);
+					}
+				} else if (!(type2 instanceof TypeSimpleInteger)) {
+					semanticErrorManager.semanticFatalError("Acceso incorrecto al array " + nombre);
+				}
+
+				Variables variables = new Variables(nombre,idArray);
+
+				//Código intermedio
+				TemporalFactory tf = new TemporalFactory(scope);
+				IntermediateCodeBuilder cb = new IntermediateCodeBuilder(scope);
+				cb.addQuadruples(idArray.getExpresion().getIntermediateCode());
+				TemporalIF temp = tf.create();
+				TemporalIF temp1 = tf.create();
+				TemporalIF temp2 = tf.create();
+				TemporalIF temp3 = tf.create();
+				TemporalIF tempPos = idArray.getExpresion().getTemporal();
+				Variable var = new Variable(nombre, symbol);
+				cb.addQuadruple("MVA",temp1,var);
+				cb.addQuadruple("MV",temp2,tempPos);
+				cb.addQuadruple("SUB",temp3,temp1,temp2);
+				cb.addQuadruple("MV",temp,temp3);
+				variables.setTemporal(temp);
+				variables.setIntermediateCode(cb.create());
+
+				RESULT = variables;
+:}
+                      
+                | IDENTIFICADOR:identificador parFuncion:parFuncion
+{:
+				String nombre = identificador.getLexema().toUpperCase();
+				ScopeIF scope = scopeManager.getCurrentScope();
+
+				//Comprobación semántica: el número de parámetros es correcto
+				SymbolProcedure symbol = (SymbolProcedure)scopeManager.searchSymbol(nombre);
+				int parametros = 0;
+				int talla = symbol.getCabProcedure().getProcParenParam().getProcListParam().getProcParamList().size();
+				for(int i = 0; i < talla; i++) {
+					ProcParam procParam = symbol.getCabProcedure().getProcParenParam().getProcListParam().getProcParamList().get(i);
+					parametros += procParam.getCadIdVar().getIdList().size();						
+				}
+				if(parFuncion.getParametros() != null && parFuncion.getParametros().getExpresionList().size() != parametros) {
+					semanticErrorManager.semanticFatalError("El número de parámetros no coincide con la llamada en el procedimiento " + nombre);
+				}
+
+				//Comprobación semántica: coinciden el tipo de parámetros de la llamada y el procedimiento
+				if(symbol.getCabProcedure().getProcParenParam().getProcListParam().getProcParamList() != null) {
+					int talla1 = symbol.getCabProcedure().getProcParenParam().getProcListParam().getProcParamList().size();
+					for(int i = 0; i < talla1; i++) {
+						ProcParam procParam = symbol.getCabProcedure().getProcParenParam().getProcListParam().getProcParamList().get(i);
+						CadIdVar cadIdVar = procParam.getCadIdVar();
+						TypeIF tipoVar = procParam.getTipoVar();
+						int talla2 = cadIdVar.getIdList().size();				
+						for(int j = 0; j < talla2; j++) {
+							TypeIF type1 = tipoVar;
+							TypeIF type2 = getTypeExpresion(parFuncion.getParametros().getExpresionList().get(j));
+							if(!(type1.getName().equals(type2.getName()))) {
+								semanticErrorManager.semanticFatalError("El tipo de parámetros no coincide con la llamada en el procedimiento " + nombre);
+							}
+						}
+					}
+				}
+
+				Variables variables = new Variables(nombre,parFuncion);
+
+				RESULT = variables;
+:}
+                      ;
+
+idArray       ::= CORCHIZQ expresion:expresion CORCHDER
+{:
+				IdArray idArray = new IdArray(expresion);
+				RESULT = idArray;
+:}
+                      ;
+
+intOBool      ::= INTEGER
+{:
+				TypeSimpleInteger typeInteger = new TypeSimpleInteger(scopeManager.getCurrentScope());
+				RESULT = typeInteger;
+:}
+                       
+                | BOOLEAN
+{:
+				TypeSimpleBoolean typeBoolean = new TypeSimpleBoolean(scopeManager.getCurrentScope());
+				RESULT = typeBoolean;
+:}
+                      ;
+
+entOid        ::= ENTERO:entero
+{:
+				int e = Integer.parseInt(entero.getLexema());
+				RESULT = e;
+:}                       
+                | IDENTIFICADOR:identificador
+{:
+				String nombre = identificador.getLexema().toUpperCase();
+
+				//Comprobación semántica: existe el identificador
+				if(scopeManager.containsSymbol(nombre)) {
+					SymbolIF symbol = scopeManager.searchSymbol(nombre);
+					TypeIF type = symbol.getType();
+					//Comprobación semántica: el identificador es un entero
+					if(type instanceof TypeSimpleInteger) {
+						SymbolConstant symbolConstant = (SymbolConstant)symbol;
+						RESULT = symbolConstant.getEntero();
+					} else {
+						semanticErrorManager.semanticFatalError("Identificador " + nombre + " no es un entero - línea: " + identificador.getLine());
+					}
+				} else {
+					semanticErrorManager.semanticFatalError("Identificador " + nombre + " no existe - línea: " + identificador.getLine());
+				}
+:}
+                      ;
+
+// Constantes Booleanas.
+vBooleano     ::= TRUE
+{:
+				Boolean t = new Boolean(true);
+				RESULT = t;
+:}
+                      
+                | FALSE
+{:
+				Boolean f = new Boolean(false);
+				RESULT = f;
+:}
+                      ;

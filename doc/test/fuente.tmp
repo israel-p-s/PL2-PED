@@ -1,0 +1,46 @@
+;Quadruple - [VAR A1, 0, null]
+MOVE #0, /65535
+
+;Quadruple - [MV T_0, 1, null]
+MOVE #1, /65534
+
+;Quadruple - [MV FOR0, T_0, null]
+MOVE /65534, /65535
+
+;Quadruple - [INL L_0, null, null]
+L_0: NOP 
+
+;Quadruple - [MV T_1, 9, null]
+MOVE #9, /65533
+
+;Quadruple - [INC T_1, null, null]
+INC /65533
+
+;Quadruple - [BRF L_1, FOR0, T_1]
+CMP /65535, /65533
+BZ /L_1
+
+;Quadruple - [MVA T_2, A1, null]
+MOVE #65535, /65532
+
+;Quadruple - [REF T_2, null, null]
+MOVE /65532, .R1 
+MOVE [.R1], /65532 
+
+;Quadruple - [WRITEINT T_2, null, null]
+WRINT/65532 
+WRCHAR #10 
+WRCHAR #13 
+
+;Quadruple - [INC FOR0, null, null]
+INC /65535
+
+;Quadruple - [BR L_0, null, null]
+BR /L_0
+
+;Quadruple - [INL L_1, null, null]
+L_1: NOP 
+
+;Quadruple - [HALT null, null, null]
+HALT
+

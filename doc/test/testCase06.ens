@@ -1,0 +1,58 @@
+;Quadruple - [VAR A1, 0, null]
+MOVE #0, /65535
+
+;Quadruple - [VAR RESTA, 0, null]
+MOVE #0, /65534
+
+;Quadruple - [VAR B1, 0, null]
+MOVE #0, /65533
+
+;Quadruple - [MV T_1, 10, null]
+MOVE #10, /65531
+
+;Quadruple - [MVA T_0, A1, null]
+MOVE #65535, /65532
+
+;Quadruple - [STP T_0, T_1, null]
+MOVE /65532, .R1
+MOVE /65531, [.R1]
+
+;Quadruple - [MV T_3, 5, null]
+MOVE #5, /65529
+
+;Quadruple - [MVA T_2, B1, null]
+MOVE #65533, /65530
+
+;Quadruple - [STP T_2, T_3, null]
+MOVE /65530, .R1
+MOVE /65529, [.R1]
+
+;Quadruple - [MVA T_4, RESTA, null]
+MOVE #65534, /65528
+
+;Quadruple - [STP T_4, null, null]
+MOVE /65528, .R1
+MOVE null, [.R1]
+
+;Quadruple - [WRITESTRING T_7, L_0, null]
+WRSTR /L_0 
+WRCHAR #10 
+WRCHAR #13 
+
+;Quadruple - [MVA T_8, RESTA, null]
+MOVE #65534, /65524
+
+;Quadruple - [REF T_8, null, null]
+MOVE /65524, .R1 
+MOVE [.R1], /65524 
+
+;Quadruple - [WRITEINT T_8, null, null]
+WRINT/65524 
+WRCHAR #10 
+WRCHAR #13 
+
+;Quadruple - [HALT null, null, null]
+HALT
+;Quadruple - [CADENA Restar:, L_0, null]
+L_0: DATA "Restar:" 
+

@@ -1,0 +1,18 @@
+;Quadruple - [WRITESTRING T_0, L_0, null]
+WRSTR /L_0 
+WRCHAR #10 
+WRCHAR #13 
+
+;Quadruple - [WRITESTRING T_1, L_1, null]
+WRSTR /L_1 
+WRCHAR #10 
+WRCHAR #13 
+
+;Quadruple - [HALT null, null, null]
+HALT
+;Quadruple - [CADENA Hola, L_0, null]
+L_0: DATA "Hola" 
+
+;Quadruple - [CADENA Mundo!, L_1, null]
+L_1: DATA "Mundo!" 
+

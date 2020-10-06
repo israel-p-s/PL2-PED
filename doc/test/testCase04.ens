@@ -1,0 +1,122 @@
+;Quadruple - [VAR A1, 0, null]
+MOVE #0, /65535
+
+;Quadruple - [VAR MULT, 0, null]
+MOVE #0, /65534
+
+;Quadruple - [VAR BOL3, 0, null]
+MOVE #0, /65533
+
+;Quadruple - [VAR BOL2, 0, null]
+MOVE #0, /65532
+
+;Quadruple - [VAR BOL1, 0, null]
+MOVE #0, /65531
+
+;Quadruple - [VAR B1, 0, null]
+MOVE #0, /65530
+
+;Quadruple - [MV T_1, 10, null]
+MOVE #10, /65528
+
+;Quadruple - [MVA T_0, A1, null]
+MOVE #65535, /65529
+
+;Quadruple - [STP T_0, T_1, null]
+MOVE /65529, .R1
+MOVE /65528, [.R1]
+
+;Quadruple - [MV T_3, 2, null]
+MOVE #2, /65526
+
+;Quadruple - [MVA T_2, B1, null]
+MOVE #65530, /65527
+
+;Quadruple - [STP T_2, T_3, null]
+MOVE /65527, .R1
+MOVE /65526, [.R1]
+
+;Quadruple - [MVA T_5, A1, null]
+MOVE #65535, /65524
+
+;Quadruple - [REF T_5, null, null]
+MOVE /65524, .R1 
+MOVE [.R1], /65524 
+
+;Quadruple - [MVA T_6, B1, null]
+MOVE #65530, /65523
+
+;Quadruple - [REF T_6, null, null]
+MOVE /65523, .R1 
+MOVE [.R1], /65523 
+
+;Quadruple - [MUL T_7, T_5, T_6]
+MUL /65524, /65523
+MOVE .A, /65522
+
+;Quadruple - [MVA T_4, MULT, null]
+MOVE #65534, /65525
+
+;Quadruple - [STP T_4, T_7, null]
+MOVE /65525, .R1
+MOVE /65522, [.R1]
+
+;Quadruple - [MVA T_8, MULT, null]
+MOVE #65534, /65521
+
+;Quadruple - [REF T_8, null, null]
+MOVE /65521, .R1 
+MOVE [.R1], /65521 
+
+;Quadruple - [WRITEINT T_8, null, null]
+WRINT/65521 
+WRCHAR #10 
+WRCHAR #13 
+
+;Quadruple - [MV T_10, 1, null]
+MOVE #1, /65519
+
+;Quadruple - [MVA T_9, BOL1, null]
+MOVE #65531, /65520
+
+;Quadruple - [STP T_9, T_10, null]
+MOVE /65520, .R1
+MOVE /65519, [.R1]
+
+;Quadruple - [MV T_12, 0, null]
+MOVE #0, /65517
+
+;Quadruple - [MVA T_11, BOL2, null]
+MOVE #65532, /65518
+
+;Quadruple - [STP T_11, T_12, null]
+MOVE /65518, .R1
+MOVE /65517, [.R1]
+
+;Quadruple - [MVA T_14, BOL1, null]
+MOVE #65531, /65515
+
+;Quadruple - [REF T_14, null, null]
+MOVE /65515, .R1 
+MOVE [.R1], /65515 
+
+;Quadruple - [MVA T_15, BOL2, null]
+MOVE #65532, /65514
+
+;Quadruple - [REF T_15, null, null]
+MOVE /65514, .R1 
+MOVE [.R1], /65514 
+
+;Quadruple - [OR T_16, T_14, T_15]
+OR /65515, /65514
+MOVE .A, /65513
+
+;Quadruple - [MVA T_13, BOL3, null]
+MOVE #65533, /65516
+
+;Quadruple - [STP T_13, T_16, null]
+MOVE /65516, .R1
+MOVE /65513, [.R1]
+
+;Quadruple - [HALT null, null, null]
+HALT
